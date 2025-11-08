@@ -1,0 +1,12 @@
+delay=0.15
+arm_delay=0.05
+on_time=0.7
+IGNITE_COLOR="green"
+ARMED_COLOR="red"
+LAUNCH_COLOR="orange"
+OUT_OF_ORDER_COLOR="grey"
+DISABLED_OUT_COLOR="orange"
+ENABLED_OUT_COLOR="green"
+OFFLINE_COLOR="lightgrey"
+DEFAULT_SQ_ID="default"
+DEFAULT_SQ_NAME="Default"
