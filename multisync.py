@@ -5,6 +5,7 @@ import threading
 FPP_IP = ""
 FPP_PORT = 32320  # FPP MultiSync port
 last_sync=None
+started=False
 
 def start_remote():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -14,7 +15,7 @@ def start_remote():
     print("UDP server started in background.")
 
 def run_remote(sock):
-    global last_sync
+    global last_sync, started
     print(f"Listening for FPP MultiSync packets on port {FPP_PORT}...\n")
 
     while True:
@@ -34,6 +35,7 @@ def run_remote(sock):
         elapsed_time = struct.unpack("<f", data[13:17])[0]
         filename = data[17:].split(b'\x00', 1)[0].decode(errors="ignore")
         last_sync=elapsed_time, filename
+        started=True
         if file_type==0:
             print(f"  Elapsed Time: {elapsed_time:.3f}s")
             print(f"  Filename: {filename}")

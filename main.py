@@ -1,3 +1,8 @@
+"""K-Boom is an open-source utility software to manage your fireworks and your fireworks controllers, sequence them and play them in sync with music.
+It is compatible with FPP Multisync broadcast by default, but you can write custom backends to connect it to whatever you want"""
+
+"""And, yeah, I know this program is absolutely horrible and messy, but don't worry, I'll refactor in a million years"""
+
 import time
 from tkinter import *
 from tkinter.filedialog import asksaveasfilename, askopenfilename
@@ -13,6 +18,7 @@ import firemaestro as backend
 
 import multisync as resync
 
+player=None
 
 def change_delay():
     global delay
@@ -289,13 +295,17 @@ class Sequence:
         self.duration=10.0
 
     def play(self):
-        showerror("Not implemented, the dev is lazy", "You reached the frontier of the K-Boom metaverse. This feature is not implemented yet")
+        global player
+        stop_all()
+        player=render_sequence()
+        player.playing_sequence=self
+        player.play_thread()
 
     def update_entries(self, e=None):
         "Updates internal variables with ui entries fields"
         self.name = self.name_entry.get()
         self.id=self.id_entry.get()
-        duration=self.duration_entry.get()
+        """duration=self.duration_entry.get()
         if not duration.isdigit():
             showerror("Error - K-Boom", "Duration value must be a number")
         else:
@@ -303,7 +313,7 @@ class Sequence:
             if duration<5:
                 showerror("Error - K-Boom", "Sequence must be at least 5 seconds long")
             else:
-                self.duration=duration
+                self.duration=duration"""
         update_dropdowns()
 
     def pack(self, frame):
@@ -333,9 +343,11 @@ class Render:
     def __init__(self, sequence_data=[], playing_sequence=None):
         self.sequence_data=sequence_data
         self.playing_sequence=playing_sequence
+        self.playing=True
+        self.mode=MODE_STANDALONE
 
     def add_step(self, timecode, sequence, function, priority, command):
-        print("Adding step")
+        #print("Adding step")
         step=(timecode, function, priority, command, sequence)
         self.sequence_data.append(step)
         self._order_sequence()
@@ -348,7 +360,11 @@ class Render:
         return (timecode, priority)
 
     def play_thread(self):
+        self.playing=True
         threading.Thread(target=self.play()).start()
+
+    def stop(self):
+        self.playing=False
 
     def save(self):
         file_data=list()
@@ -373,7 +389,7 @@ class Render:
 
 
     def pack(self, btn):
-        print(self.sequence_data)
+        print("Sequence Render data :", self.sequence_data)
         btn.configure(state=NORMAL)
         btn.configure(command=self.play_thread)
         SAV_SQ_BTN.configure(state=NORMAL)
@@ -387,31 +403,55 @@ class Render:
         return "%02d:%02d:%02d"%(min, sec, cent)
 
     def play(self):
-        t_ref=time.time()
+        t_ref=time.time() # Store the actual time reference
         lastUpdate=time.time()
-        for timecode, func, priority, command, sequence in self.sequence_data:
-            if sequence.id!=self.playing_sequence:
-                print("Skipping timecode : not in playing sequence")
-                print(sequence, self.playing_sequence)
+        SEQUENCE_LABEL.configure(text=self.playing_sequence.name)
+        tk.update()
+
+        fired=[]
+        while self.playing:
+            t = time.time()
+            actual_timecode=t-t_ref
+            resync_data = resync.resync(actual_timecode, self.playing_sequence)
+            if resync_data:
+                resync_timecode, resync_sequence = resync_data
+                #print("Resyncing to", resync_timecode)
+                t_ref = t - resync_timecode
+                if resync_sequence!=self.playing_sequence:
+                    self.playing_sequence=find_sequence(resync_sequence)
+                    if self.playing_sequence:
+                        SEQUENCE_LABEL.configure(text=self.playing_sequence.name)
+                    else:
+                        SEQUENCE_LABEL.configure(text=resync_sequence+" (Passive mode)")
+
+            if t - lastUpdate >= 0.1:
+                TIMECODE_LABEL.configure(text=self.format_timecode(t - t_ref))
+                tk.update()
+
+
+            if not self.playing_sequence:
+                #print("Passive mode...")
                 continue
-            print("Waiting for timecode", timecode, "for func", priority)
-            while True:
-                t=time.time()
-                resync_data=resync.resync(timecode, sequence)
-                if resync_data:
-                    resync_timecode, resync_sequence=resync_data
-                    print("Resyncing to", resync_timecode)
-                    t_ref=t-resync_timecode
-                    self.playing_sequence=resync_sequence
-                if t-t_ref>=timecode:
-                    print(timecode, t-t_ref)
-                    if priority==4:
+
+            #Check if it is fire time
+            for sq_timecode, sq_func, sq_priority, sq_command, sq_sequence in self.sequence_data:
+                if sq_sequence.id!=self.playing_sequence.id:
+                    #print("Skipping step : not in playing sequence")
+                    #print(sq_sequence.id, self.playing_sequence.id)
+                    continue
+
+                if sq_func in fired:
+                    #print("Skipping step : already fired")
+                    continue
+
+                if actual_timecode>=sq_timecode:
+                    if sq_priority==4:
                         print("-----------------LAUNCH----------------")
-                    func()
-                    break
-                if t-lastUpdate>=0.1:
-                    TIMECODE_LABEL.configure(text=self.format_timecode(t-t_ref))
-                    tk.update()
+                    print("Target timecode :", sq_timecode, "Real timecode :", actual_timecode)
+                    sq_func()
+                    fired.append(sq_func)
+
+            #time.sleep(0.1)
 
 
 ##########################      UI Functions and main       ##########################
@@ -430,10 +470,26 @@ def create_sequence():
 
 def play_all():
     "Render and play all sequences one by one"
+    showerror("NOPE !     Chuck testa", "This feature is not implemented yet")
+
+def remote_autoplay():
+    "Wait for a resync packet, start the sequence, then follow it as remote"
     render=render_sequence()
-    for sequence in sequences:
-        render.playing_sequence=sequence.id
-        render.play()
+    resync.started=False
+    while True:
+        if resync.started:
+            break
+        time.sleep(0.09)
+    render.playing_sequence=DEFAULT_SQ_ID
+    render.mode=MODE_REMOTE
+    render.play_thread()
+
+def stop_all():
+    "Stop the main play thread"
+    global player
+    if player:
+        player.stop()
+        player=None
 
 
 def toggle_output():
@@ -552,6 +608,7 @@ def load_show_data(data):
 
     update_dropdowns()
 
+
 def save_show():
     update_entries()
     update_dropdowns()
@@ -566,6 +623,11 @@ def open_show():
             data=json.load(f)
         load_show_data(data)
 
+def find_sequence(_id):
+    for sq in sequences:
+        if sq.id==_id:
+            return sq
+    return None
 
 tk=Tk()
 tk.title("K-Boom Studio")
@@ -626,6 +688,8 @@ OUTPUT_ENABLED=True
 #Setup sequences frame
 sequences[0].pack(sequences_frame)
 Button(sequences_frame, text="Play All Sequences", command=play_all).pack(side=BOTTOM)
+Button(sequences_frame, text="Remote Autoplay", command=remote_autoplay).pack(side=BOTTOM)
+Button(sequences_frame, text="Stop all", command=stop_all).pack(side=BOTTOM)
 Button(sequences_frame, text="New Sequence", command=create_sequence).pack(side=BOTTOM)
 
 
