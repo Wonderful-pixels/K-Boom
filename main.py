@@ -405,7 +405,10 @@ class Render:
     def play(self):
         t_ref=time.time() # Store the actual time reference
         lastUpdate=time.time()
-        SEQUENCE_LABEL.configure(text=self.playing_sequence.name)
+        if self.playing_sequence:
+            SEQUENCE_LABEL.configure(text=self.playing_sequence.name)
+        else:
+            SEQUENCE_LABEL.configure(text="Passive mode")
         tk.update()
 
         fired=[]
@@ -474,15 +477,18 @@ def play_all():
 
 def remote_autoplay():
     "Wait for a resync packet, start the sequence, then follow it as remote"
-    render=render_sequence()
+    global player
+    start_resync()
+    stop_all()
+    player=render_sequence()
     resync.started=False
     while True:
         if resync.started:
             break
         time.sleep(0.09)
-    render.playing_sequence=DEFAULT_SQ_ID
-    render.mode=MODE_REMOTE
-    render.play_thread()
+    player.playing_sequence=None
+    print("Start play thread")
+    player.play_thread()
 
 def stop_all():
     "Stop the main play thread"

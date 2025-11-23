@@ -34,12 +34,21 @@ def run_remote(sock):
         frame_number = struct.unpack("<I", data[9:13])[0]
         elapsed_time = struct.unpack("<f", data[13:17])[0]
         filename = data[17:].split(b'\x00', 1)[0].decode(errors="ignore")
-        last_sync=elapsed_time, filename
+        sequence_name=(filename.replace(".fseq", "")
+                       .replace(".wav", "")
+                       .replace(".mp3", "")
+                       .replace(".mp4", "")
+                       .replace(".mov", "")
+                       .replace(".mpg", "")
+                       .replace(".jpg", "")
+                       .replace(".png", ""))
+        last_sync=elapsed_time, sequence_name
         started=True
         if file_type==0:
-            print(f"  Elapsed Time: {elapsed_time:.3f}s")
+            pass
+            """print(f"  Elapsed Time: {elapsed_time:.3f}s")
             print(f"  Filename: {filename}")
-            print("-" * 50)
+            print("-" * 50)"""
 
 def resync(timecode, sequence):
     global last_sync
